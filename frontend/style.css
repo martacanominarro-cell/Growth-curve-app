@@ -52,6 +52,16 @@ input[type="text"], input[type="number"], select {
 }
 input[type="text"]:focus, input[type="number"]:focus, select:focus { border-color: var(--accent); }
 
+/* Custom Select component */
+.color-select-wrapper { position: relative; user-select: none; width: 260px; font-size: 0.9rem; color: #333; display: inline-block; vertical-align: middle; }
+.color-select { background: rgba(255,255,255,0.9); border: 1px solid var(--border); padding: 0.6rem; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
+.color-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ccc; border-top: none; z-index: 99; display: none; border-radius: 0 0 6px 6px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); max-height: 300px; overflow-y: auto; }
+.color-dropdown.show { display: block; }
+.color-option { padding: 0.6rem; cursor: pointer; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #eee; }
+.color-option:hover { background: #f0f0f0; }
+.swatch-bin { display: flex; gap: 2px; }
+.swatch { width: 12px; height: 12px; border-radius: 2px; }
+
 button { padding: 0.6rem 1rem; border: none; border-radius: 6px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 

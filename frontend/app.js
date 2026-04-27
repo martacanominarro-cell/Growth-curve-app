@@ -15,12 +15,28 @@ let uploadedFiles = [];
 let rawDataCache = null;
 let layoutMap = {};
 let selectedWells = new Set();
-let latestResults = null; 
+let latestResults = null;
+let currentShuffledPalette = null; // New state to hold shuffled colors consistently
 
 const BACKEND_URL = '';
 
 // Initialize Grid
 const rows = ['A','B','C','D','E','F','G','H'];
+let isDragging = false;
+let isSelecting = true;
+
+document.addEventListener('mouseup', () => { isDragging = false; });
+
+function toggleWell(el, wellId, select) {
+    if(select) {
+        selectedWells.add(wellId);
+        el.classList.add('selected');
+    } else {
+        selectedWells.delete(wellId);
+        el.classList.remove('selected');
+    }
+}
+
 rows.forEach(r => {
     for(let c=1; c<=12; c++) {
         const wellId = `${r}${c}`;
@@ -29,15 +45,18 @@ rows.forEach(r => {
         div.innerText = wellId;
         div.dataset.well = wellId;
         
-        div.addEventListener('click', () => {
-            if(selectedWells.has(wellId)) {
-                selectedWells.delete(wellId);
-                div.classList.remove('selected');
-            } else {
-                selectedWells.add(wellId);
-                div.classList.add('selected');
+        div.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            isSelecting = !selectedWells.has(wellId);
+            toggleWell(div, wellId, isSelecting);
+        });
+        
+        div.addEventListener('mouseenter', (e) => {
+            if(isDragging) {
+                toggleWell(div, wellId, isSelecting);
             }
         });
+        
         plateGrid.appendChild(div);
     }
 });
@@ -70,6 +89,10 @@ uploadBtn.addEventListener('click', async () => {
         rawDataCache = data.raw_data;
         uploadStatus.style.color = 'var(--success)';
         uploadStatus.innerText = `Data loaded! Rows: ${rawDataCache.length}`;
+        
+        // Immediately trigger 96-well visual layout prior to mapping assignments!
+        document.getElementById('pre-mapping-container').style.display = 'block';
+        renderPreMappingGrid(rawDataCache);
     } catch (e) {
         uploadStatus.style.color = 'var(--danger)';
         uploadStatus.innerText = e.message;
@@ -145,6 +168,9 @@ analyzeBtn.addEventListener('click', async () => {
         if(!res.ok) throw new Error(await res.text());
         latestResults = await res.json();
         
+        // Load selected palette
+        currentShuffledPalette = getThemeColors();
+        
         // Populate Baseline Dropdown
         const groups = [...new Set(latestResults.parameters.map(p => `${p.Strain} | ${p.Condition}`))];
         document.getElementById('baseline-select').innerHTML = '<option value="">None</option>' + groups.map(g => `<option value="${g}">${g}</option>`).join('');
@@ -172,12 +198,70 @@ document.getElementById('apply-formatting').addEventListener('click', () => {
 document.getElementById('apply-all-formatting').addEventListener('click', () => {
     if(latestResults) renderResults(true);
 });
+document.getElementById('heatmap-metric').addEventListener('change', () => {
+    if(latestResults) renderHeatmap();
+});
+document.getElementById('pre-mapping-metric').addEventListener('change', () => {
+    if(rawDataCache) renderPreMappingGrid(rawDataCache);
+});
+const THEMES = {
+    custom: { name: 'Custom Base (Seaborn)', palette: ['#f59700', '#a058d8', '#df582c', '#8a1100', '#6a86ff', '#9fcafb', '#e01e5a'] },
+    access: { name: 'Maximum Contrast (Accessible)', palette: ['#e6194B', '#3cb44b', '#4363d8', '#ffe119', '#f58231', '#911eb4', '#42d4f4'] },
+    cyber: { name: 'Neon Cyberpunk (Dark/Light)', palette: ['#FF007F', '#00F0FF', '#FFE600', '#00FF00', '#9D00FF', '#FF4E00', '#0084FF'] },
+    spring: { name: 'Spring Brights', palette: ['#ff6b6b', '#1a535c', '#ffe66d', '#4ecdc4', '#ff9f1c', '#2ec4b6', '#ff0054'] },
+    pastel: { name: 'Soft Pastels', palette: ['#ffb3ba', '#bae1ff', '#baffc9', '#ffffba', '#ffdfba', '#e6c8fa', '#c4faf8'] },
+    publication: { name: 'Publication (Grey/Blue)', palette: ['#111111', '#2c7fb8', '#7fcdbb', '#555555', '#edf8b1', '#bdbdbd', '#636363'] }
+};
+
+// Initialize Custom Select
+const themeWidget = document.getElementById('theme-widget');
+const themeActive = document.getElementById('theme-active');
+const themeList = document.getElementById('theme-list');
+const themeText = document.getElementById('theme-active-text');
+const themeSwatches = document.getElementById('theme-active-swatches');
+
+function buildSwatches(palette) {
+    return palette.slice(0, 6).map(c => `<div class="swatch" style="background:${c}"></div>`).join('');
+}
+
+// Build dropdown html
+themeList.innerHTML = Object.entries(THEMES).map(([key, data]) => `
+    <div class="color-option" data-key="${key}">
+        <span>${data.name}</span>
+        <div class="swatch-bin">${buildSwatches(data.palette)}</div>
+    </div>
+`).join('');
+
+themeActive.addEventListener('click', (e) => {
+    themeList.classList.toggle('show');
+    e.stopPropagation();
+});
+
+document.addEventListener('click', () => themeList.classList.remove('show'));
+
+document.querySelectorAll('.color-option').forEach(opt => {
+    opt.addEventListener('click', (e) => {
+        const key = e.currentTarget.getAttribute('data-key');
+        themeWidget.setAttribute('data-value', key);
+        themeText.innerText = THEMES[key].name;
+        themeSwatches.innerHTML = buildSwatches(THEMES[key].palette);
+        
+        currentShuffledPalette = THEMES[key].palette;
+        if(latestResults) {
+            renderResults(false);
+            renderHeatmap();
+        }
+        if(rawDataCache) {
+            renderPreMappingGrid(rawDataCache);
+        }
+    });
+});
+// Set initial swatches
+themeSwatches.innerHTML = buildSwatches(THEMES['custom'].palette);
 
 function getThemeColors() {
-    const theme = document.getElementById('color-theme').value;
-    if(theme === 'publication') return ['#111111', '#555555', '#2c7fb8', '#7fcdbb', '#edf8b1'];
-    if(theme === 'vibrant') return ['#FF0054', '#9E0059', '#390099', '#FFBD00', '#FF5400'];
-    return ['#f59700', '#df582c', '#8a1100', '#a058d8', '#6a86ff', '#9fcafb'];
+    const key = themeWidget.getAttribute('data-value');
+    return THEMES[key]?.palette || THEMES['custom'].palette;
 }
 
 function renderQCPlots(qcData) {
@@ -218,7 +302,9 @@ function renderResults(forceAllTargets) {
     const fontFamily = document.getElementById('font-family').value;
     const fontSize = parseInt(document.getElementById('font-size').value) || 14;
     const lineSize = parseInt(document.getElementById('line-size').value) || 2;
-    const colors = getThemeColors();
+    // Sync active palette cleanly without shuffling
+    currentShuffledPalette = getThemeColors();
+    const colors = currentShuffledPalette;
     
     const plotTitle = document.getElementById('plot-title').value.trim() || 'Averaged Growth Curves';
     const xAxisTitle = document.getElementById('xaxis-title').value.trim() || 'Time (Hours)';
@@ -235,7 +321,7 @@ function renderResults(forceAllTargets) {
     // Determine active targets
     let activeTargets = [];
     if(forceAllTargets) {
-        activeTargets = ['curve-chart', 'k-chart', 'r-chart', 'lambda-chart'];
+        activeTargets = ['curve-chart', 'k-chart', 'r-chart', 'lambda-chart', 'auc-chart'];
     } else {
         document.querySelectorAll('.target-chk').forEach(chk => {
             if(chk.checked) activeTargets.push(chk.value);
@@ -267,7 +353,8 @@ function renderResults(forceAllTargets) {
     document.getElementById('stat-results').innerHTML = `
         <div class="stat-item">K p-value: <span>${smap?.K?.p_val?.toExponential(3) || 'N/A'}</span></div>
         <div class="stat-item">r p-value: <span>${smap?.r?.p_val?.toExponential(3) || 'N/A'}</span></div>
-        <div class="stat-item">lambda p-value: <span>${smap?.['lambda']?.p_val?.toExponential(3) || 'N/A'}</span></div>
+        <div class="stat-item">\u03bb p-value: <span>${smap?.['lambda']?.p_val?.toExponential(3) || 'N/A'}</span></div>
+        <div class="stat-item">AUC p-value: <span>${smap?.auc?.p_val?.toExponential(3) || 'N/A'}</span></div>
     `;
     
     // Bar Logic
@@ -316,7 +403,8 @@ function renderResults(forceAllTargets) {
     
     plotBar('k-chart', 'K', 'Carrying Capacity (K)');
     plotBar('r-chart', 'r', 'Growth Rate (r)');
-    plotBar('lambda-chart', 'lambda', 'Lag Time (lambda)');
+    plotBar('lambda-chart', 'lambda', 'Lag Time (\u03bb)');
+    plotBar('auc-chart', 'auc', 'Area Under Curve (AUC)');
     
     // Curve Logic
     if(data.curves && activeTargets.includes('curve-chart')) {
@@ -338,6 +426,75 @@ function renderResults(forceAllTargets) {
         };
         Plotly.newPlot('curve-chart', traces, curveLayout, plotOptions);
     }
+    
+    renderHeatmap();
+}
+
+function renderHeatmap() {
+    if(!latestResults) return;
+    const metric = document.getElementById('heatmap-metric').value;
+    
+    if (metric === 'curves') return; // Deprecated -> Shifted natively to Pre-Mapping Layout.
+    
+    if(!latestResults.parameters) return;
+    
+    // Group identically mapped wells from different files and average them
+    const wellMap = {};
+    latestResults.parameters.forEach(p => {
+        if(!wellMap[p.Well]) wellMap[p.Well] = [];
+        wellMap[p.Well].push(p[metric]);
+    });
+    
+    const rows = ['A','B','C','D','E','F','G','H'];
+    const cols = [1,2,3,4,5,6,7,8,9,10,11,12];
+    
+    const zData = [];
+    const textData = [];
+    
+    rows.forEach(r => {
+        const rowZ = [];
+        const rowTxt = [];
+        cols.forEach(c => {
+            const well = `${r}${c}`;
+            const vals = wellMap[well];
+            if(vals && vals.length > 0) {
+                const mean = vals.reduce((a,b)=>a+b,0)/vals.length;
+                rowZ.push(mean);
+                rowTxt.push(`${well}<br>${mean.toFixed(3)}`);
+            } else {
+                rowZ.push(null);
+                rowTxt.push(well);
+            }
+        });
+        zData.push(rowZ);
+        textData.push(rowTxt);
+    });
+    
+    // Choose active colorscale visually mapped to theme
+    const theme = document.getElementById('theme-widget').getAttribute('data-value');
+    let colorscale = 'Viridis';
+    if(theme === 'cyber') colorscale = 'Plasma';
+    if(theme === 'publication') colorscale = 'Greys';
+    if(theme === 'access') colorscale = 'Portland';
+    if(theme === 'spring') colorscale = 'Picnic';
+    if(theme === 'pastel') colorscale = 'Pastel';
+    
+    const trace = {
+        x: cols.map(String), y: rows, z: zData, text: textData,
+        hoverinfo: 'text', type: 'heatmap', colorscale: colorscale,
+        showscale: true, zgreen: true
+    };
+    
+    const heatmapLayout = {
+        title: { text: `96-Well Plate Distribution: ${metric}`, font: {weight: 'bold'}, y: 0.98 },
+        xaxis: { title: 'Column', dtick: 1, side: 'top', showgrid: false },
+        yaxis: { title: 'Row', autorange: 'reversed', showgrid: false },
+        height: 700,
+        margin: {t: 100, b:40, l:60, r:20},
+        plot_bgcolor: "#f8f9fa", paper_bgcolor: "white"
+    };
+    
+    Plotly.newPlot('heatmap-chart', [trace], heatmapLayout, {responsive: true});
 }
 
 document.getElementById('download-csv').addEventListener('click', () => {
@@ -347,3 +504,178 @@ document.getElementById('download-csv').addEventListener('click', () => {
     XLSX.utils.book_append_sheet(wb, ws, "Parameters");
     XLSX.writeFile(wb, "Growth_Parameters_Export.xlsx");
 });
+
+document.getElementById('download-prism').addEventListener('click', () => {
+    if(!latestResults || !latestResults.parameters) return alert("No parameters extracted yet!");
+    const wb = XLSX.utils.book_new();
+    const params = latestResults.parameters;
+    
+    // Group identically mapped wells (blinding replicates for Prism alignment)
+    const metrics = ['K', 'r', 'lambda', 'auc'];
+    metrics.forEach(metric => {
+        const pivotData = {};
+        let maxReplicates = 0;
+        
+        params.forEach(p => {
+            const groupName = `${p.Strain} | ${p.Condition}`;
+            if(!pivotData[groupName]) pivotData[groupName] = [];
+            pivotData[groupName].push(p[metric]);
+            if(pivotData[groupName].length > maxReplicates) maxReplicates = pivotData[groupName].length;
+        });
+        
+        const groups = Object.keys(pivotData);
+        if(groups.length === 0) return;
+        
+        const sheetRows = [groups]; // Row 0 is the Group Headers
+        for(let i=0; i<maxReplicates; i++) {
+            const row = [];
+            groups.forEach(g => {
+                row.push(pivotData[g][i] !== undefined ? pivotData[g][i] : null);
+            });
+            sheetRows.push(row);
+        }
+        
+        const ws = XLSX.utils.aoa_to_sheet(sheetRows);
+        XLSX.utils.book_append_sheet(wb, ws, metric);
+    });
+    
+    XLSX.writeFile(wb, "Growth_Prism_Format_Export.xlsx");
+});
+
+function renderPreMappingGrid(dataArray) {
+    if(!dataArray || dataArray.length === 0) return;
+    
+    // Group flat records into individual trace arrays
+    const groupedData = {};
+    dataArray.forEach(row => {
+        const key = `${row.File}|${row.Well}`;
+        if (!groupedData[key]) {
+            groupedData[key] = { File: row.File, Well: row.Well, Time_hours: [], OD: [], K: row.K, r: row.r, lambda: row.lambda, auc: row.auc };
+        }
+        groupedData[key].Time_hours.push(row.Time_hours);
+        groupedData[key].OD.push(row.OD);
+    });
+    const traceArray = Object.values(groupedData);
+    
+    const metric = document.getElementById('pre-mapping-metric').value;
+    const theme = document.getElementById('theme-widget').getAttribute('data-value');
+    const rows = ['A','B','C','D','E','F','G','H'];
+    const cols = [1,2,3,4,5,6,7,8,9,10,11,12];
+
+    if (metric !== 'curves') {
+        const zData = [];
+        const textData = [];
+        
+        rows.forEach(r => {
+            const zRow = [];
+            const tRow = [];
+            cols.forEach(c => {
+                const well = `${r}${c}`;
+                const wellItems = traceArray.filter(item => item.Well === well);
+                if (wellItems.length > 0) {
+                    const val = wellItems[0][metric];
+                    zRow.push(val);
+                    tRow.push(`Well: ${well}<br>${metric.toUpperCase()}: ${parseFloat(val).toFixed(3)}<br>File: ${wellItems[0].File}`);
+                } else {
+                    zRow.push(null);
+                    tRow.push(`Well: ${well}<br>No Data`);
+                }
+            });
+            zData.push(zRow);
+            textData.push(tRow);
+        });
+
+        let colorscale = 'Viridis';
+        if(theme === 'cyber') colorscale = 'Plasma';
+        if(theme === 'publication') colorscale = 'Greys';
+        if(theme === 'access') colorscale = 'Portland';
+        if(theme === 'spring') colorscale = 'Picnic';
+        if(theme === 'pastel') colorscale = 'Pastel';
+
+        const trace = {
+            x: cols.map(String), y: rows, z: zData, text: textData,
+            hoverinfo: 'text', type: 'heatmap', colorscale: colorscale,
+            showscale: true
+        };
+
+        const heatmapLayout = {
+             title: { text: `Pre-Computed ${metric.toUpperCase()} Heatmap (All Sub-Replicates)`, font: {weight: 'bold'}, color: '#333' },
+             xaxis: { title: 'Column', tickmode: 'linear' },
+             yaxis: { title: 'Row', autorange: 'reversed' },
+             plot_bgcolor: "#ffffff", paper_bgcolor: "#ffffff",
+             height: 500, margin: {t: 60, b:40, l:60, r:20}
+        };
+
+        Plotly.newPlot('pre-mapping-grid', [trace], heatmapLayout, {responsive: true});
+        return;
+    }
+    
+    // Compute exact global maximums so we can hardcode identically sized subplot limits
+    let maxTime = 0;
+    let maxOD = 0;
+    traceArray.forEach(d => {
+        const localMaxT = Math.max(...d.Time_hours);
+        const localMaxOD = Math.max(...d.OD);
+        if(localMaxT > maxTime) maxTime = localMaxT;
+        if(localMaxOD > maxOD) maxOD = localMaxOD;
+    });
+
+    const traces = [];
+    const layout = {
+        title: { text: `Raw 96-Well Biological Replicates`, font: {weight: 'bold'}, y: 0.98, color: '#333' },
+        grid: { rows: 8, columns: 12, pattern: 'independent', xgap: 0.05, ygap: 0.05 },
+        height: 700, margin: {t: 60, b:40, l:60, r:20},
+        plot_bgcolor: "#ffffff", paper_bgcolor: "#ffffff",
+        showlegend: true, legend: {orientation: 'h', y: 1.05, x: 1, xanchor: 'right', yanchor: 'bottom', font: {color: '#333'}},
+        font: {color: '#333'}
+    };
+    
+    const uniqueFiles = [...new Set(traceArray.map(o => o.File))].sort();
+    const legendAdded = new Set();
+    const currentThemePalette = getThemeColors();
+    
+    let subIndex = 1;
+    rows.forEach(r => {
+        cols.forEach(c => {
+            const well = `${r}${c}`;
+            const suffix = subIndex === 1 ? '' : subIndex;
+            const axisStr = suffix;
+            
+            const isBottom = r === 'H';
+            const isLeft = c === 1;
+            
+            // Hardcode ranges linearly across everything. Crash proof!
+            layout[`xaxis${axisStr}`] = { 
+                showticklabels: isBottom, range: [0, maxTime], showgrid: false,
+                showline: true, linewidth: 1, linecolor: 'rgba(0,0,0,0.5)', mirror: true, zeroline: false
+            };
+            layout[`yaxis${axisStr}`] = { 
+                showticklabels: isLeft, range: [0, maxOD * 1.1], showgrid: false,
+                showline: true, linewidth: 1, linecolor: 'rgba(0,0,0,0.5)', mirror: true, zeroline: false
+            };
+            
+            if(c === 1) layout[`yaxis${axisStr}`].title = {text: r, font:{size:11, weight:'bold'}};
+            if(r === 'A') layout[`xaxis${axisStr}`].title = {text: String(c), font:{size:11, weight:'bold'}, side: 'top'};
+            
+            const wellItems = traceArray.filter(item => item.Well === well);
+            if (wellItems.length > 0) {
+                wellItems.forEach(td => {
+                    const fIdx = uniqueFiles.indexOf(td.File);
+                    const showInLegend = !legendAdded.has(td.File);
+                    if (showInLegend) legendAdded.add(td.File);
+                    
+                    traces.push({
+                        x: td.Time_hours, y: td.OD, mode: 'lines',
+                        xaxis: `x${suffix}`, yaxis: `y${suffix}`, name: td.File, showlegend: showInLegend,
+                        line: {color: currentThemePalette[fIdx % currentThemePalette.length], width: 1.5}, hoverinfo: 'none'
+                    });
+                });
+            } else {
+                traces.push({ x: [], y: [], xaxis: `x${suffix}`, yaxis: `y${suffix}` });
+            }
+            subIndex++;
+        });
+    });
+    
+    Plotly.newPlot('pre-mapping-grid', traces, layout, {responsive: true});
+}

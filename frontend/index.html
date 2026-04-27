@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=2">
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <!-- Add SheetJS for Excel Download -->
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
@@ -32,6 +32,22 @@
 
         <section class="card mapping-section">
             <h2>2. Plate Layout Mapping</h2>
+            
+            <div id="pre-mapping-container" class="chart-box" style="margin-bottom: 2rem; width: 100%; display: none;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h3 style="color: #333;">Raw Plate Scanner</h3>
+                    <label style="font-weight:bold; color: #333;">Metric: 
+                        <select id="pre-mapping-metric" style="width:180px; padding: 5px;">
+                            <option value="curves">Raw Biological Traces</option>
+                            <option value="K">Pre-Computed Capacity (K)</option>
+                            <option value="r">Pre-Computed Rate (r)</option>
+                            <option value="lambda">Pre-Computed Lag (\u03bb)</option>
+                            <option value="auc">Pre-Computed AUC</option>
+                        </select>
+                    </label>
+                </div>
+                <div id="pre-mapping-grid" style="width: 100%;"></div>
+            </div>
             <div class="mapping-layout">
                 <div class="grid-side">
                     <div class="map-controls">
@@ -81,13 +97,19 @@
                             </select>
                         </label>
                         <label>Font Size: <input type="number" id="font-size" value="14" min="10" max="24" style="width:60px"></label>
-                        <label>Theme: 
-                            <select id="color-theme">
-                                <option value="plotly">Custom Image Theme</option>
-                                <option value="publication">Publication (Black/Grey/Blue)</option>
-                                <option value="vibrant">Vibrant Presentation</option>
-                            </select>
-                        </label>
+                        <label>Theme: </label>
+                        <div class="color-select-wrapper" id="theme-widget" data-value="custom">
+                            <div class="color-select" id="theme-active">
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <span id="theme-active-text">Custom Base</span>
+                                    <div class="swatch-bin" id="theme-active-swatches"></div>
+                                </div>
+                                <span style="font-size: 0.8rem; color: #888;">▼</span>
+                            </div>
+                            <div class="color-dropdown" id="theme-list">
+                                <!-- Populated structurally by JS -->
+                            </div>
+                        </div>
                     </div>
                     <div class="settings-row">
                         <label>Curve Width (px): <input type="number" id="plot-width" value="800" style="width:80px"></label>
@@ -117,28 +139,48 @@
                         <label><input type="checkbox" class="target-chk" value="k-chart" checked> Carrying Capacity</label>
                         <label><input type="checkbox" class="target-chk" value="r-chart" checked> Growth Rate</label>
                         <label><input type="checkbox" class="target-chk" value="lambda-chart" checked> Lag Time ($\lambda$)</label>
+                        <label><input type="checkbox" class="target-chk" value="auc-chart" checked> AUC</label>
                         <label style="margin-left: 20px;">Baseline for Stats: <select id="baseline-select" style="width:140px"><option value="">None</option></select></label>
                         <button id="apply-formatting" class="secondary-btn" style="margin-left: auto;">Apply Specific Graph</button>
                     </div>
                 </div>
                 <div style="display:flex; flex-direction:column; gap: 10px;">
-                    <button id="download-csv" class="primary-btn">Download Params (Excel)</button>
+                    <button id="download-prism" class="info-btn" style="background-color: #2c7fb8; color: white;">Download Prism Format</button>
+                    <button id="download-csv" class="primary-btn">Download Raw Params</button>
                     <button id="apply-all-formatting" class="danger-btn">Force Apply to ALL</button>
                 </div>
             </div>
 
             <div id="stat-results" class="stat-banner"></div>
-            
+            <p style="font-size: 0.85rem; color: white; margin-top: 5px; margin-bottom: 20px; text-align: center;">
+                <em>Statistical Analysis: A one-way ANOVA establishes global variance significance across experimental conditions. If a specific Baseline is mapped, pairwise p-values displayed on the charts are calculated using Welch's t-test (independent samples, unequal variance).</em>
+            </p>
             <div class="chart-grid">
                 <div id="curve-chart" class="chart-box"></div>
                 <div class="bar-row">
                     <div id="k-chart" class="chart-box"></div>
                     <div id="r-chart" class="chart-box"></div>
                     <div id="lambda-chart" class="chart-box"></div>
+                    <div id="auc-chart" class="chart-box"></div>
                 </div>
+            </div>
+
+            <div class="chart-box" style="margin-top: 2rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h3>96-Well Parameter Overlay</h3>
+                    <label style="font-weight:bold;">Project Parameter: 
+                        <select id="heatmap-metric" style="width:140px; padding: 5px;">
+                            <option value="K">Carrying Capacity (K)</option>
+                            <option value="r">Growth Rate (r)</option>
+                            <option value="lambda">Lag Time (\u03bb)</option>
+                            <option value="auc">Area Under Curve (AUC)</option>
+                        </select>
+                    </label>
+                </div>
+                <div id="heatmap-chart"></div>
             </div>
         </section>
     </div>
-    <script src="app.js"></script>
+    <script src="app.js?v=12"></script>
 </body>
 </html>

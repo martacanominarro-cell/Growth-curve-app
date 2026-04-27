@@ -36,15 +36,17 @@ def gompertz(t, A, um, l, y0):
     return y0 + (A - y0) * np.exp(-np.exp((um * np.e / (A - y0)) * (l - t) + 1))
 
 def fit_growth_curve(t, y):
-    if len(y) < 5 or np.max(y) < 0.1: return [np.nan, np.nan, np.nan]
+    if len(y) < 5 or np.max(y) < 0.1: return [np.nan, np.nan, np.nan, np.nan]
     y0_guess, A_guess = y.iloc[0], np.max(y)
     um_guess = (A_guess - np.min(y)) / (np.max(t) / 2) if np.max(t) > 0 else 0.1
     l_guess = t.iloc[np.argmax(np.diff(y))] if len(y) > 1 else 0
+    auc = float(np.trapz(y, x=t))
     try:
         popt, _ = curve_fit(gompertz, t, y, p0=[A_guess, um_guess, l_guess, y0_guess], bounds=([0, 0, 0, 0], [10, 10, 50, 2]), maxfev=10000)
-        return popt[:3]  # A, um, l
+        return [popt[0], popt[1], popt[2], auc]  # A, um, l, auc
     except:
-        return [np.nan, np.nan, np.nan]
+        return [np.nan, np.nan, np.nan, auc]
+
 
 @app.post("/upload")
 async def upload_files(files: list[UploadFile]):
@@ -80,6 +82,26 @@ async def upload_files(files: list[UploadFile]):
         raise HTTPException(status_code=400, detail="No valid formatted data found.")
 
     final_df = pd.concat(all_dfs, ignore_index=True)
+    
+    # Aggressively pre-compute mathematical physics curves unconditionally for 96-well grid UX
+    params_list = []
+    for (f, w), grp in final_df.dropna(subset=['OD']).groupby(['File', 'Well']):
+        grp = grp.sort_values('Time_hours')
+        K, r, lag, auc = fit_growth_curve(grp['Time_hours'], grp['OD'])
+        params_list.append({
+            'File': f, 'Well': w,
+            'K': 0.0 if pd.isna(K) else float(K),
+            'r': 0.0 if pd.isna(r) else float(r),
+            'lambda': 0.0 if pd.isna(lag) else float(lag),
+            'auc': 0.0 if pd.isna(auc) else float(auc)
+        })
+        
+    params_df = pd.DataFrame(params_list)
+    if not params_df.empty:
+        final_df = pd.merge(final_df, params_df, on=['File', 'Well'], how='left')
+    else:
+        for c in ['K','r','lambda','auc']: final_df[c] = 0.0
+        
     return {"raw_data": final_df.to_dict(orient="records")}
 
 @app.post("/analyze")
@@ -97,10 +119,12 @@ async def analyze_data(payload: dict):
 
     results = []
     for (f, w, st, cnd), grp in df_valid.groupby(['File', 'Well', 'Strain', 'Condition']):
-        grp = grp.sort_values('Time_hours')
-        K, r, lag = fit_growth_curve(grp['Time_hours'], grp['OD'])
-        if not np.isnan(K):
-            results.append({'File': f, 'Well': w, 'Strain': st, 'Condition': cnd, 'K': K, 'r': r, 'lambda': lag})
+        # Since physics math is executed on Upload, simply aggregate the pre-computed constants
+        results.append({
+            'File': f, 'Well': w, 'Strain': st, 'Condition': cnd, 
+            'K': float(grp['K'].iloc[0]), 'r': float(grp['r'].iloc[0]), 
+            'lambda': float(grp['lambda'].iloc[0]), 'auc': float(grp['auc'].iloc[0])
+        })
 
     merged_res = pd.DataFrame(results)
     
@@ -111,7 +135,7 @@ async def analyze_data(payload: dict):
         merged_res['Group'] = merged_res['Strain'] + " | " + merged_res['Condition']
         groups = merged_res['Group'].unique()
         
-        for param in ['K', 'r', 'lambda']:
+        for param in ['K', 'r', 'lambda', 'auc']:
             stats_out[param] = {"f_val": None, "p_val": None}
             pairwise_stats[param] = {}
             
@@ -160,12 +184,24 @@ async def analyze_data(payload: dict):
                 'od': [float(o) for o in grp['OD']]
             })
 
+    # Dump absolute raw curves unconditionally for 96-well grid mapping
+    raw_all_curves = []
+    if not raw_data.empty:
+        for (f, w), grp in raw_data.groupby(['File', 'Well']):
+            raw_all_curves.append({
+                'file': f,
+                'well': w,
+                'time': [float(t) for t in grp['Time_hours']],
+                'od': [float(o) for o in grp['OD']]
+            })
+
     return {
-        "parameters": merged_res.to_dict(orient="records"),
+        "parameters": merged_res.to_dict(orient="records") if not merged_res.empty else [],
         "statistics": stats_out,
         "pairwise_stats": pairwise_stats,
         "curves": curve_data,
-        "qc_data": qc_data
+        "qc_data": qc_data,
+        "raw_all_curves": raw_all_curves
     }
 
 # Mount static frontend over the root URL
