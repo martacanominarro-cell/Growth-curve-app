@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Growth Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <!-- Add SheetJS for Excel Download -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>Growth Analysis Engine</h1>
+            <p>Upload, Map, & Extract Growth Parameters.</p>
+        </header>
+
+        <section class="card upload-section">
+            <h2>1. Import Data</h2>
+            <div class="upload-area" id="drop-zone">
+                <p>Drag & Drop your Excel files here or <span class="browse-link">browse</span></p>
+                <input type="file" id="file-input" multiple accept=".xlsx" style="display: none;">
+            </div>
+            <div id="file-list" class="file-list"></div>
+            <button id="upload-btn" class="primary-btn" disabled>Upload & Parse</button>
+            <div id="upload-status" class="status-msg"></div>
+        </section>
+
+        <section class="card mapping-section">
+            <h2>2. Plate Layout Mapping</h2>
+            <div class="mapping-layout">
+                <div class="grid-side">
+                    <div class="map-controls">
+                        <input type="text" id="strain-input" placeholder="Strain (e.g. WT)">
+                        <input type="text" id="condition-input" placeholder="Condition (e.g. Untreated)">
+                        <button id="apply-map-btn" class="secondary-btn">Map Selected</button>
+                    </div>
+                    <div class="map-controls-sub">
+                        <button id="clear-sel-btn" class="warning-btn">Clear Selection</button>
+                        <button id="clear-map-btn" class="danger-btn">Clear Entire Map</button>
+                    </div>
+                    <div class="grid-container" id="plate-grid"></div>
+                </div>
+                <div class="list-side">
+                    <h3>Active Mapped Samples</h3>
+                    <div id="mapped-list" class="mapped-list-box">
+                        <p class="empty-text">No wells mapped yet.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card action-section">
+            <button id="analyze-btn" class="primary-btn large-btn">Run Extraction & Stats</button>
+            <div id="analyze-status" class="status-msg"></div>
+        </section>
+
+        <details id="qc-section" class="card qc-section hidden" style="margin-bottom: 2rem;">
+            <summary style="font-size: 1.2rem; font-weight: bold; cursor: pointer; color: var(--accent);">
+                View Raw QC Distributions (Optional)
+            </summary>
+            <p style="margin-top: 1rem; color: var(--text-muted);">Visualizing raw biological replicates colored by source file to identify outliers.</p>
+            <div id="qc-plots" class="chart-grid"></div>
+        </details>
+
+        <section id="results-section" class="card results-section hidden">
+            <h2>3. Analysis Results</h2>
+            
+            <div class="toolbar">
+                <div class="plot-settings">
+                    <div class="settings-row">
+                        <label>Font: 
+                            <select id="font-family">
+                                <option value='"Inter", sans-serif'>Inter</option>
+                                <option value='"Arial", sans-serif'>Arial</option>
+                                <option value='"Times New Roman", serif'>Times New Roman</option>
+                            </select>
+                        </label>
+                        <label>Font Size: <input type="number" id="font-size" value="14" min="10" max="24" style="width:60px"></label>
+                        <label>Theme: 
+                            <select id="color-theme">
+                                <option value="plotly">Custom Image Theme</option>
+                                <option value="publication">Publication (Black/Grey/Blue)</option>
+                                <option value="vibrant">Vibrant Presentation</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="settings-row">
+                        <label>Curve Width (px): <input type="number" id="plot-width" value="800" style="width:80px"></label>
+                        <label>Target Height (px): <input type="number" id="plot-height" value="450" style="width:80px"></label>
+                        <label>Bar Gap: <input type="number" id="bar-gap" value="0.3" step="0.1" max="1" min="0" style="width:60px;"></label>
+                        <label>Line Thickness: <input type="number" id="line-size" value="2" min="1" max="5" style="width:60px"></label>
+                    </div>
+                    <div class="settings-row">
+                        <label>Plot Title: <input type="text" id="plot-title" value="Averaged Growth Curves" style="width:160px"></label>
+                        <label>X-Axis Title: <input type="text" id="xaxis-title" value="Time (Hours)" style="width:120px"></label>
+                        <label>X Tick Size (dtick): <input type="number" id="xtick-dtick" value="" placeholder="Auto" style="width:70px"></label>
+                    </div>
+                    <div class="settings-row">
+                        <label>Y-Axis Title: <input type="text" id="yaxis-title" value="Optical Density" style="width:120px"></label>
+                        <label>Y-Axis Scale: 
+                            <select id="yaxis-scale">
+                                <option value="linear">Linear</option>
+                                <option value="log">Logarithmic</option>
+                            </select>
+                        </label>
+                        <label>Y Tick Size (dtick): <input type="number" id="ytick-dtick" value="" placeholder="Auto" style="width:70px"></label>
+                    </div>
+                    
+                    <div class="settings-row target-checklist" style="margin-top: 5px; border-top: 1px dashed rgba(255,255,255,0.2); padding-top: 10px;">
+                        <span style="font-size: 0.9rem; font-weight:bold;">Apply Formatting To:</span>
+                        <label><input type="checkbox" class="target-chk" value="curve-chart" checked> Growth Curve</label>
+                        <label><input type="checkbox" class="target-chk" value="k-chart" checked> Carrying Capacity</label>
+                        <label><input type="checkbox" class="target-chk" value="r-chart" checked> Growth Rate</label>
+                        <label><input type="checkbox" class="target-chk" value="lambda-chart" checked> Lag Time ($\lambda$)</label>
+                        <label style="margin-left: 20px;">Baseline for Stats: <select id="baseline-select" style="width:140px"><option value="">None</option></select></label>
+                        <button id="apply-formatting" class="secondary-btn" style="margin-left: auto;">Apply Specific Graph</button>
+                    </div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap: 10px;">
+                    <button id="download-csv" class="primary-btn">Download Params (Excel)</button>
+                    <button id="apply-all-formatting" class="danger-btn">Force Apply to ALL</button>
+                </div>
+            </div>
+
+            <div id="stat-results" class="stat-banner"></div>
+            
+            <div class="chart-grid">
+                <div id="curve-chart" class="chart-box"></div>
+                <div class="bar-row">
+                    <div id="k-chart" class="chart-box"></div>
+                    <div id="r-chart" class="chart-box"></div>
+                    <div id="lambda-chart" class="chart-box"></div>
+                </div>
+            </div>
+        </section>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
