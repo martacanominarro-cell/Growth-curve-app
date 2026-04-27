@@ -40,7 +40,10 @@ def fit_growth_curve(t, y):
     y0_guess, A_guess = y.iloc[0], np.max(y)
     um_guess = (A_guess - np.min(y)) / (np.max(t) / 2) if np.max(t) > 0 else 0.1
     l_guess = t.iloc[np.argmax(np.diff(y))] if len(y) > 1 else 0
-    auc = float(np.trapz(y, x=t))
+    try:
+        auc = float(np.trapz(y, x=t))
+    except AttributeError:
+        auc = float(np.trapezoid(y, x=t))
     try:
         popt, _ = curve_fit(gompertz, t, y, p0=[A_guess, um_guess, l_guess, y0_guess], bounds=([0, 0, 0, 0], [10, 10, 50, 2]), maxfev=10000)
         return [popt[0], popt[1], popt[2], auc]  # A, um, l, auc
@@ -82,6 +85,7 @@ async def upload_files(files: list[UploadFile]):
         raise HTTPException(status_code=400, detail="No valid formatted data found.")
 
     final_df = pd.concat(all_dfs, ignore_index=True)
+    final_df['OD'] = pd.to_numeric(final_df['OD'], errors='coerce')
     
     # Aggressively pre-compute mathematical physics curves unconditionally for 96-well grid UX
     params_list = []
@@ -101,6 +105,9 @@ async def upload_files(files: list[UploadFile]):
         final_df = pd.merge(final_df, params_df, on=['File', 'Well'], how='left')
     else:
         for c in ['K','r','lambda','auc']: final_df[c] = 0.0
+        
+    # FastAPI natively crashes with a 500 error if attempting to serialize np.nan into JSON. Convert to None.
+    final_df = final_df.replace({np.nan: None})
         
     return {"raw_data": final_df.to_dict(orient="records")}
 
