@@ -48,10 +48,14 @@ def gompertz(t, A, um, l, y0):
     return y0 + (A - y0) * np.exp(-np.exp((um * np.e / (A - y0)) * (l - t) + 1))
 
 def fit_growth_curve(t, y):
-    # Reject curves with no significant growth or very few points
-    dynamic_range = np.max(y) - np.min(y)
-    if len(y) < 5 or dynamic_range < 0.1 or np.max(y) < 0.05:
+    # SAFETY: Reject empty or near-empty wells immediately to prevent crashes
+    if len(y) < 5 or np.max(y) < 0.05:
         return [0.0, 0.0, 0.0, float(np.trapz(y, x=t)) if len(y) > 1 else 0.0]
+
+    dynamic_range = np.max(y) - np.min(y)
+    if dynamic_range < 0.1:
+        return [0.0, 0.0, 0.0, float(np.trapz(y, x=t)) if len(y) > 1 else 0.0]
+
     
     y0_guess, A_guess = y.iloc[0], np.max(y)
     um_guess = (A_guess - np.min(y)) / (np.max(t) / 2) if np.max(t) > 0 else 0.1
