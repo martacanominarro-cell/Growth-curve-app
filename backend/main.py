@@ -119,18 +119,27 @@ async def upload_files(files: list[UploadFile]):
     
     # Aggressively pre-compute mathematical physics curves unconditionally for 96-well grid UX
     params_list = []
-    for (f, w), grp in final_df.dropna(subset=['OD']).groupby(['File', 'Well']):
-        grp = grp.sort_values('Time_hours')
-        K, r, lag, auc = fit_growth_curve(grp['Time_hours'], grp['OD'])
-        params_list.append({
-            'File': f, 'Well': w,
-            'K': 0.0 if pd.isna(K) else float(K),
-            'r': 0.0 if pd.isna(r) else float(r),
-            'lambda': 0.0 if pd.isna(lag) else float(lag),
-            'auc': 0.0 if pd.isna(auc) else float(auc)
-        })
+    try:
+        for (f, w), grp in final_df.dropna(subset=['OD']).groupby(['File', 'Well']):
+            grp = grp.sort_values('Time_hours')
+            try:
+                K, r, lag, auc = fit_growth_curve(grp['Time_hours'], grp['OD'])
+            except Exception as e:
+                print(f"Error fitting Well {w} in {f}: {e}")
+                K, r, lag, auc = 0.0, 0.0, 0.0, 0.0
+                
+            params_list.append({
+                'File': f, 'Well': w,
+                'K': 0.0 if pd.isna(K) else float(K),
+                'r': 0.0 if pd.isna(r) else float(r),
+                'lambda': 0.0 if pd.isna(lag) else float(lag),
+                'auc': 0.0 if pd.isna(auc) else float(auc)
+            })
+    except Exception as outer_e:
+        print(f"CRITICAL ERROR in upload loop: {outer_e}")
         
     params_df = pd.DataFrame(params_list)
+
     if not params_df.empty:
         final_df = pd.merge(final_df, params_df, on=['File', 'Well'], how='left')
     else:
