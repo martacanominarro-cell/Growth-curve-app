@@ -74,16 +74,20 @@ def fit_growth_curve(t, y):
         
         # Reality Check: If K is significantly higher than the max observed OD, it's likely a false fit
         max_obs = np.max(y)
-        if popt[0] > max_obs * 1.5 or popt[0] > 2.5:
-             # If it fits a massive K to a tiny jump at the end, reject it
-             if dynamic_range < 0.2:
+        total_time = np.max(t)
+        
+        # If it fits a massive K to a tiny jump at the end, reject it
+        # C10 fix: Stricter threshold (0.3) for predicting any significant K
+        if dynamic_range < 0.3:
+             if popt[0] > max_obs * 1.2 or popt[2] > total_time * 0.75:
                  return [0.0, 0.0, 0.0, auc]
         
-        # If it's just hitting the limits on rate for low-growth wells, reject it
-        if popt[1] > 1.9 and dynamic_range < 0.2:
+        # Absolute cap: No well in a 96-well plate should be predicted to hit 3.0 if it hasn't reached 1.0 yet
+        if popt[0] > 2.0 and max_obs < 0.5:
              return [0.0, 0.0, 0.0, auc]
              
         return [popt[0], popt[1], popt[2], auc]
+
     except:
         return [0.0, 0.0, 0.0, auc]
 
