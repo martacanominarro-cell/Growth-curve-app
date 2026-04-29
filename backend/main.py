@@ -50,11 +50,14 @@ def gompertz(t, A, um, l, y0):
 def fit_growth_curve(t, y):
     # SAFETY: Reject empty or near-empty wells immediately to prevent crashes
     if len(y) < 5 or np.max(y) < 0.05:
-        return [0.0, 0.0, 0.0, float(np.trapz(y, x=t)) if len(y) > 1 else 0.0]
+        return [None, None, None, float(np.trapz(y, x=t)) if len(y) > 1 else 0.0]
 
+    # Noise Floor: 0.1 OD (anything below this is absolute noise)
     dynamic_range = np.max(y) - np.min(y)
     if dynamic_range < 0.1:
-        return [0.0, 0.0, 0.0, float(np.trapz(y, x=t)) if len(y) > 1 else 0.0]
+        return [None, None, None, float(np.trapz(y, x=t)) if len(y) > 1 else 0.0]
+
+
 
     
     y0_guess, A_guess = y.iloc[0], np.max(y)
@@ -72,24 +75,24 @@ def fit_growth_curve(t, y):
         popt, _ = curve_fit(gompertz, t, y, p0=[A_guess, um_guess, l_guess, y0_guess], 
                           bounds=([0, 0, 0, 0], [3.0, 2.0, 50, 1.5]), maxfev=5000)
         
-        # Reality Check: If K is significantly higher than the max observed OD, it's likely a false fit
+        # Check for Incomplete Curves (Late Bloomers)
         max_obs = np.max(y)
         total_time = np.max(t)
         
-        # If it fits a massive K to a tiny jump at the end, reject it
-        # C10 fix: Stricter threshold (0.3) for predicting any significant K
-        if dynamic_range < 0.3:
-             if popt[0] > max_obs * 1.2 or popt[2] > total_time * 0.75:
-                 return [0.0, 0.0, 0.0, auc]
+        # If it starts growing very late (after 75% of the experiment)
+        if popt[2] > total_time * 0.75:
+            # We have enough info for Lag, but not for K or r
+            return [None, None, float(popt[2]), auc]
         
-        # Absolute cap: No well in a 96-well plate should be predicted to hit 3.0 if it hasn't reached 1.0 yet
-        if popt[0] > 2.0 and max_obs < 0.5:
-             return [0.0, 0.0, 0.0, auc]
+        # If the model over-predicted K based on a very small jump
+        if popt[0] > max_obs * 1.5 and max_obs < 0.6:
+             return [None, None, float(popt[2]), auc]
              
-        return [popt[0], popt[1], popt[2], auc]
+        return [float(popt[0]), float(popt[1]), float(popt[2]), auc]
 
     except:
-        return [0.0, 0.0, 0.0, auc]
+        return [None, None, None, auc]
+
 
 
 
