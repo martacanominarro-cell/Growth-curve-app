@@ -488,7 +488,7 @@ function renderHeatmap() {
                     xData.push(c);
                     yData.push(r);
                     colorData.push(mean);
-                    sizeData.push(Math.max(15, sd * 150)); 
+                    sizeData.push(sd);
                     textData.push(`Well: ${well}<br>Avg: ${mean.toFixed(3)}<br>SD: ${sd.toFixed(3)}<br>Replicates: ${vals.length}`);
                 }
             }
@@ -502,16 +502,20 @@ function renderHeatmap() {
     if(theme === 'spring') colorscale = 'Picnic';
     if(theme === 'pastel') colorscale = 'Pastel';
 
+    const maxSd = Math.max(...sizeData, 0.0001);
+    const scaledSizes = sizeData.map(sd => 15 + (sd / maxSd) * 25);
+
     const trace = {
         x: xData, y: yData, mode: 'markers', text: textData, hoverinfo: 'text',
         marker: {
-            size: sizeData,
+            size: scaledSizes,
             color: colorData,
             colorscale: colorscale,
             showscale: true,
             line: { color: 'rgba(0,0,0,0.5)', width: 1 }
         }
     };
+
 
     const heatmapLayout = {
          title: { text: `96-Well Bubble Plot: Average ${metric} (Size = Error)`, font: {weight: 'bold'} },
@@ -617,12 +621,15 @@ function renderPreMappingGrid(dataArray) {
                         xData.push(c);
                         yData.push(r);
                         colorData.push(mean);
-                        sizeData.push(Math.max(15, sd * 150));
+                        sizeData.push(sd);
                         textData.push(`Well: ${well}<br>Avg ${metric.toUpperCase()}: ${mean.toFixed(3)}<br>SD: ${sd.toFixed(3)}<br>Replicates: ${vals.length}`);
                     }
                 }
             });
         });
+
+        const maxSd = Math.max(...sizeData, 0.0001);
+        const scaledSizes = sizeData.map(sd => 15 + (sd / maxSd) * 25);
 
         let colorscale = 'Viridis';
         if(theme === 'cyber') colorscale = 'Plasma';
@@ -634,7 +641,7 @@ function renderPreMappingGrid(dataArray) {
         const trace = {
             x: xData, y: yData, mode: 'markers', text: textData, hoverinfo: 'text',
             marker: {
-                size: sizeData, color: colorData, colorscale: colorscale, showscale: true,
+                size: scaledSizes, color: colorData, colorscale: colorscale, showscale: true,
                 line: { color: 'rgba(0,0,0,0.5)', width: 1 }
             }
         };
@@ -745,18 +752,20 @@ function renderBubblePlot(data) {
                     const sd = vals.length > 1 ? Math.sqrt(vals.map(v => Math.pow(v - mean, 2)).reduce((a, b) => a + b, 0) / (vals.length - 1)) : 0;
                     
                     x.push(s); y.push(c); color.push(mean);
-                    // Bubble size = Standard Deviation (Error representation)
-                    size.push(Math.max(15, sd * 150)); 
+                    size.push(sd); 
                     text.push(`Strain: ${s}<br>Condition: ${c}<br>Avg ${metric}: ${mean.toFixed(3)}<br>Error (SD): ${sd.toFixed(3)}<br>n = ${vals.length} replicates`);
                 }
             }
         });
     });
 
+    const maxSd = Math.max(...size, 0.0001);
+    const scaledSizes = size.map(sd => 15 + (sd / maxSd) * 25);
+
     const trace = {
         x: x, y: y, mode: 'markers', text: text, hoverinfo: 'text',
         marker: {
-            size: size, color: color, colorscale: 'Viridis', showscale: true,
+            size: scaledSizes, color: color, colorscale: 'Viridis', showscale: true,
             line: { color: 'rgba(0,0,0,0.5)', width: 1 }
         }
     };
