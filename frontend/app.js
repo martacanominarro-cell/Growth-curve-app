@@ -92,7 +92,13 @@ uploadBtn.addEventListener('click', async () => {
         
         // Immediately trigger 96-well visual layout prior to mapping assignments!
         document.getElementById('pre-mapping-container').style.display = 'block';
+        
+        const fileNames = [...new Set(rawDataCache.map(r => r.File))];
+        const fileSelect = document.getElementById('pre-mapping-file');
+        fileSelect.innerHTML = `<option value="">Average All Plates</option>` + fileNames.map(f => `<option value="${f}">${f}</option>`).join('');
+        
         renderPreMappingGrid(rawDataCache);
+
     } catch (e) {
         uploadStatus.style.color = 'var(--danger)';
         uploadStatus.innerText = e.message;
@@ -203,6 +209,12 @@ document.getElementById('heatmap-metric').addEventListener('change', () => {
 });
 document.getElementById('pre-mapping-metric').addEventListener('change', () => {
     if(rawDataCache) renderPreMappingGrid(rawDataCache);
+});
+document.getElementById('pre-mapping-file').addEventListener('change', () => {
+    if(rawDataCache) renderPreMappingGrid(rawDataCache);
+});
+document.getElementById('zero-outliers-chk').addEventListener('change', () => {
+    if(latestResults) renderResults(true);
 });
 const THEMES = {
     custom: { name: 'Custom Base (Seaborn)', palette: ['#f59700', '#a058d8', '#df582c', '#8a1100', '#6a86ff', '#9fcafb', '#e01e5a'] },
@@ -369,7 +381,12 @@ function renderResults(forceAllTargets) {
         const annotations = [];
         
         groups.forEach((g, idx) => {
-            const vals = params.filter(p => `${p.Strain} | ${p.Condition}` === g).map(p => p[metric]);
+            const rawVals = params.filter(p => `${p.Strain} | ${p.Condition}` === g).map(p => p[metric]);
+            const treatAsZero = document.getElementById('zero-outliers-chk') ? document.getElementById('zero-outliers-chk').checked : false;
+            const vals = treatAsZero ? rawVals.map(v => v === null ? 0 : v) : rawVals.filter(v => v !== null);
+            
+            if(vals.length === 0) return; // Skip if no valid data
+            
             const mean = vals.reduce((a,b)=>a+b,0)/vals.length;
             const pdiff = vals.map(x => Math.pow(x - mean, 2)).reduce((a,b)=>a+b,0);
             const sd = vals.length > 1 ? Math.sqrt(pdiff/(vals.length - 1)) : 0;
@@ -428,6 +445,7 @@ function renderResults(forceAllTargets) {
     }
     
     renderHeatmap();
+    renderBubblePlot(data);
 }
 
 function renderHeatmap() {
@@ -447,55 +465,65 @@ function renderHeatmap() {
     
     const rows = ['A','B','C','D','E','F','G','H'];
     const cols = [1,2,3,4,5,6,7,8,9,10,11,12];
+    const theme = document.getElementById('theme-widget').getAttribute('data-value');
     
-    const zData = [];
+    const xData = [];
+    const yData = [];
+    const sizeData = [];
+    const colorData = [];
     const textData = [];
     
     rows.forEach(r => {
-        const rowZ = [];
-        const rowTxt = [];
         cols.forEach(c => {
             const well = `${r}${c}`;
-            const vals = wellMap[well];
-            if(vals && vals.length > 0) {
-                const mean = vals.reduce((a,b)=>a+b,0)/vals.length;
-                rowZ.push(mean);
-                rowTxt.push(`${well}<br>${mean.toFixed(3)}`);
-            } else {
-                rowZ.push(null);
-                rowTxt.push(well);
+            if(wellMap[well] && wellMap[well].length > 0) {
+                const rawVals = wellMap[well];
+                const treatAsZero = document.getElementById('zero-outliers-chk') ? document.getElementById('zero-outliers-chk').checked : false;
+                const vals = treatAsZero ? rawVals.map(v => v === null ? 0 : v) : rawVals.filter(v => v !== null);
+                
+                if (vals.length > 0) {
+                    const mean = vals.reduce((a,b)=>a+b,0)/vals.length;
+                    const sd = vals.length > 1 ? Math.sqrt(vals.map(v => Math.pow(v - mean, 2)).reduce((a,b)=>a+b,0)/(vals.length - 1)) : 0;
+                    
+                    xData.push(c);
+                    yData.push(r);
+                    colorData.push(mean);
+                    sizeData.push(Math.max(15, sd * 150)); 
+                    textData.push(`Well: ${well}<br>Avg: ${mean.toFixed(3)}<br>SD: ${sd.toFixed(3)}<br>Replicates: ${vals.length}`);
+                }
             }
         });
-        zData.push(rowZ);
-        textData.push(rowTxt);
     });
     
-    // Choose active colorscale visually mapped to theme
-    const theme = document.getElementById('theme-widget').getAttribute('data-value');
     let colorscale = 'Viridis';
     if(theme === 'cyber') colorscale = 'Plasma';
     if(theme === 'publication') colorscale = 'Greys';
     if(theme === 'access') colorscale = 'Portland';
     if(theme === 'spring') colorscale = 'Picnic';
     if(theme === 'pastel') colorscale = 'Pastel';
-    
+
     const trace = {
-        x: cols.map(String), y: rows, z: zData, text: textData,
-        hoverinfo: 'text', type: 'heatmap', colorscale: colorscale,
-        showscale: true, zgreen: true
+        x: xData, y: yData, mode: 'markers', text: textData, hoverinfo: 'text',
+        marker: {
+            size: sizeData,
+            color: colorData,
+            colorscale: colorscale,
+            showscale: true,
+            line: { color: 'rgba(0,0,0,0.5)', width: 1 }
+        }
     };
-    
+
     const heatmapLayout = {
-        title: { text: `96-Well Plate Distribution: ${metric}`, font: {weight: 'bold'}, y: 0.98 },
-        xaxis: { title: 'Column', dtick: 1, side: 'top', showgrid: false },
-        yaxis: { title: 'Row', autorange: 'reversed', showgrid: false },
-        height: 700,
-        margin: {t: 100, b:40, l:60, r:20},
-        plot_bgcolor: "#f8f9fa", paper_bgcolor: "white"
+         title: { text: `96-Well Bubble Plot: Average ${metric} (Size = Error)`, font: {weight: 'bold'} },
+         xaxis: { title: 'Column', tickmode: 'array', tickvals: cols, side: 'top', showgrid: false },
+         yaxis: { title: 'Row', autorange: 'reversed', tickmode: 'array', tickvals: rows, showgrid: false },
+         plot_bgcolor: "#ffffff", paper_bgcolor: "#ffffff",
+         height: 500, margin: {t: 80, b:40, l:60, r:20}
     };
-    
+
     Plotly.newPlot('heatmap-chart', [trace], heatmapLayout, {responsive: true});
 }
+
 
 document.getElementById('download-csv').addEventListener('click', () => {
     if(!latestResults || !latestResults.parameters) return alert("No parameters extracted yet!");
@@ -545,9 +573,12 @@ document.getElementById('download-prism').addEventListener('click', () => {
 function renderPreMappingGrid(dataArray) {
     if(!dataArray || dataArray.length === 0) return;
     
+    const selectedFile = document.getElementById('pre-mapping-file') ? document.getElementById('pre-mapping-file').value : "";
+    const filteredData = selectedFile ? dataArray.filter(r => r.File === selectedFile) : dataArray;
+
     // Group flat records into individual trace arrays
     const groupedData = {};
-    dataArray.forEach(row => {
+    filteredData.forEach(row => {
         const key = `${row.File}|${row.Well}`;
         if (!groupedData[key]) {
             groupedData[key] = { File: row.File, Well: row.Well, Time_hours: [], OD: [], K: row.K, r: row.r, lambda: row.lambda, auc: row.auc };
@@ -563,26 +594,34 @@ function renderPreMappingGrid(dataArray) {
     const cols = [1,2,3,4,5,6,7,8,9,10,11,12];
 
     if (metric !== 'curves') {
-        const zData = [];
+        const xData = [];
+        const yData = [];
+        const sizeData = [];
+        const colorData = [];
         const textData = [];
         
         rows.forEach(r => {
-            const zRow = [];
-            const tRow = [];
             cols.forEach(c => {
                 const well = `${r}${c}`;
                 const wellItems = traceArray.filter(item => item.Well === well);
+                
                 if (wellItems.length > 0) {
-                    const val = wellItems[0][metric];
-                    zRow.push(val);
-                    tRow.push(`Well: ${well}<br>${metric.toUpperCase()}: ${parseFloat(val).toFixed(3)}<br>File: ${wellItems[0].File}`);
-                } else {
-                    zRow.push(null);
-                    tRow.push(`Well: ${well}<br>No Data`);
+                    const rawVals = wellItems.map(item => item[metric]);
+                    const treatAsZero = document.getElementById('zero-outliers-chk') ? document.getElementById('zero-outliers-chk').checked : false;
+                    const vals = treatAsZero ? rawVals.map(v => v === null ? 0 : v) : rawVals.filter(v => v !== null);
+                    
+                    if (vals.length > 0) {
+                        const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+                        const sd = vals.length > 1 ? Math.sqrt(vals.map(v => Math.pow(v - mean, 2)).reduce((a, b) => a + b, 0) / (vals.length - 1)) : 0;
+                        
+                        xData.push(c);
+                        yData.push(r);
+                        colorData.push(mean);
+                        sizeData.push(Math.max(15, sd * 150));
+                        textData.push(`Well: ${well}<br>Avg ${metric.toUpperCase()}: ${mean.toFixed(3)}<br>SD: ${sd.toFixed(3)}<br>Replicates: ${vals.length}`);
+                    }
                 }
             });
-            zData.push(zRow);
-            textData.push(tRow);
         });
 
         let colorscale = 'Viridis';
@@ -593,22 +632,25 @@ function renderPreMappingGrid(dataArray) {
         if(theme === 'pastel') colorscale = 'Pastel';
 
         const trace = {
-            x: cols.map(String), y: rows, z: zData, text: textData,
-            hoverinfo: 'text', type: 'heatmap', colorscale: colorscale,
-            showscale: true
+            x: xData, y: yData, mode: 'markers', text: textData, hoverinfo: 'text',
+            marker: {
+                size: sizeData, color: colorData, colorscale: colorscale, showscale: true,
+                line: { color: 'rgba(0,0,0,0.5)', width: 1 }
+            }
         };
 
         const heatmapLayout = {
-             title: { text: `Pre-Computed ${metric.toUpperCase()} Heatmap (All Sub-Replicates)`, font: {weight: 'bold'}, color: '#333' },
-             xaxis: { title: 'Column', tickmode: 'linear' },
-             yaxis: { title: 'Row', autorange: 'reversed' },
+             title: { text: `Pre-Computed ${metric.toUpperCase()} Bubble Plot (All Plates)`, font: {weight: 'bold'}, color: '#333' },
+             xaxis: { title: 'Column', tickmode: 'array', tickvals: cols, side: 'top', showgrid: false },
+             yaxis: { title: 'Row', autorange: 'reversed', tickmode: 'array', tickvals: rows, showgrid: false },
              plot_bgcolor: "#ffffff", paper_bgcolor: "#ffffff",
-             height: 500, margin: {t: 60, b:40, l:60, r:20}
+             height: 500, margin: {t: 80, b:40, l:60, r:20}
         };
 
         Plotly.newPlot('pre-mapping-grid', [trace], heatmapLayout, {responsive: true});
         return;
     }
+
     
     // Compute exact global maximums so we can hardcode identically sized subplot limits
     let maxTime = 0;
@@ -678,4 +720,54 @@ function renderPreMappingGrid(dataArray) {
     });
     
     Plotly.newPlot('pre-mapping-grid', traces, layout, {responsive: true});
+}
+
+function renderBubblePlot(data) {
+    if(!data || !data.parameters) return;
+    const metric = document.getElementById('heatmap-metric').value;
+    const treatAsZero = document.getElementById('zero-outliers-chk') ? document.getElementById('zero-outliers-chk').checked : false;
+    
+    // Grouping by Strain and Condition for multi-plate averages
+    const strains = [...new Set(data.parameters.map(p => p.Strain))].sort();
+    const conditions = [...new Set(data.parameters.map(p => p.Condition))].sort();
+    
+    const x = [], y = [], size = [], color = [], text = [];
+
+    strains.forEach(s => {
+        conditions.forEach(c => {
+            const matches = data.parameters.filter(p => p.Strain === s && p.Condition === c);
+            if (matches.length > 0) {
+                const rawVals = matches.map(m => m[metric]);
+                const vals = treatAsZero ? rawVals.map(v => v === null ? 0 : v) : rawVals.filter(v => v !== null);
+                
+                if (vals.length > 0) {
+                    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+                    const sd = vals.length > 1 ? Math.sqrt(vals.map(v => Math.pow(v - mean, 2)).reduce((a, b) => a + b, 0) / (vals.length - 1)) : 0;
+                    
+                    x.push(s); y.push(c); color.push(mean);
+                    // Bubble size = Standard Deviation (Error representation)
+                    size.push(Math.max(15, sd * 150)); 
+                    text.push(`Strain: ${s}<br>Condition: ${c}<br>Avg ${metric}: ${mean.toFixed(3)}<br>Error (SD): ${sd.toFixed(3)}<br>n = ${vals.length} replicates`);
+                }
+            }
+        });
+    });
+
+    const trace = {
+        x: x, y: y, mode: 'markers', text: text, hoverinfo: 'text',
+        marker: {
+            size: size, color: color, colorscale: 'Viridis', showscale: true,
+            line: { color: 'rgba(0,0,0,0.5)', width: 1 }
+        }
+    };
+
+    const layout = {
+        title: { text: `Global Comparison: Average ${metric} (Bubble Size = Error)`, font: {weight: 'bold'} },
+        xaxis: { title: 'Strain', gridcolor: '#eee', zeroline: false },
+        yaxis: { title: 'Condition', gridcolor: '#eee', zeroline: false },
+        margin: { t: 80, b: 80, l: 80, r: 80 },
+        plot_bgcolor: "white", paper_bgcolor: "white"
+    };
+
+    Plotly.newPlot('bubble-chart', [trace], layout, {responsive: true});
 }

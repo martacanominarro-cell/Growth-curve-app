@@ -34,18 +34,24 @@
             <h2>2. Plate Layout Mapping</h2>
             
             <div id="pre-mapping-container" class="chart-box" style="margin-bottom: 2rem; width: 100%; display: none;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap: 20px;">
                     <h3 style="color: #333;">Raw Plate Scanner</h3>
-                    <label style="font-weight:bold; color: #333;">Metric: 
-                        <select id="pre-mapping-metric" style="width:180px; padding: 5px;">
-                            <option value="curves">Raw Biological Traces</option>
-                            <option value="K">Pre-Computed Capacity (K)</option>
-                            <option value="r">Pre-Computed Rate (r)</option>
-                            <option value="lambda">Pre-Computed Lag (\u03bb)</option>
-                            <option value="auc">Pre-Computed AUC</option>
-                        </select>
-                    </label>
+                    <div style="display:flex; gap: 15px; align-items: center;">
+                        <label style="font-weight:bold; color: #333;">Select Plate: 
+                            <select id="pre-mapping-file" style="width:180px; padding: 5px;"></select>
+                        </label>
+                        <label style="font-weight:bold; color: #333;">Metric: 
+                            <select id="pre-mapping-metric" style="width:180px; padding: 5px;">
+                                <option value="curves">Raw Biological Traces</option>
+                                <option value="K">Pre-Computed Capacity (K)</option>
+                                <option value="r">Pre-Computed Rate (r)</option>
+                                <option value="lambda">Pre-Computed Lag (\u03bb)</option>
+                                <option value="auc">Pre-Computed AUC</option>
+                            </select>
+                        </label>
+                    </div>
                 </div>
+
                 <div id="pre-mapping-grid" style="width: 100%;"></div>
             </div>
             <div class="mapping-layout">
@@ -143,7 +149,16 @@
                         <label style="margin-left: 20px;">Baseline for Stats: <select id="baseline-select" style="width:140px"><option value="">None</option></select></label>
                         <button id="apply-formatting" class="secondary-btn" style="margin-left: auto;">Apply Specific Graph</button>
                     </div>
+                    
+                    <div class="settings-row" style="margin-top: 5px; border-top: 1px dashed rgba(255,255,255,0.2); padding-top: 10px; background: rgba(255,255,255,0.05); padding: 8px; border-radius: 4px;">
+                        <span style="font-size: 0.9rem; font-weight:bold; color: #ffeb3b;">Statistical Handling:</span>
+                        <label style="margin-left: 10px; cursor: pointer;">
+                            <input type="checkbox" id="zero-outliers-chk"> 
+                            Treat "No Growth" (Blank) wells as exactly 0.0 in Averages
+                        </label>
+                    </div>
                 </div>
+
                 <div style="display:flex; flex-direction:column; gap: 10px;">
                     <button id="download-prism" class="info-btn" style="background-color: #2c7fb8; color: white;">Download Prism Format</button>
                     <button id="download-csv" class="primary-btn">Download Raw Params</button>
@@ -156,7 +171,7 @@
                 <em>Statistical Analysis: A one-way ANOVA establishes global variance significance across experimental conditions. If a specific Baseline is mapped, pairwise p-values displayed on the charts are calculated using Welch's t-test (independent samples, unequal variance).</em>
             </p>
             <div class="chart-grid">
-                <div id="curve-chart" class="chart-box"></div>
+                <div id="curve-chart" class="chart-box full-width"></div>
                 <div class="bar-row">
                     <div id="k-chart" class="chart-box"></div>
                     <div id="r-chart" class="chart-box"></div>
@@ -165,7 +180,17 @@
                 </div>
             </div>
 
+            <!-- Global Experiment Comparison -->
+            <div class="result-card" style="margin-top: 2rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h3>Global Comparative Analysis</h3>
+                    <p class="section-desc" style="color: var(--text-muted);">Bubble size = Standard Deviation (Error).</p>
+                </div>
+                <div id="bubble-chart" class="chart-box full-width" style="height: 500px;"></div>
+            </div>
+
             <div class="chart-box" style="margin-top: 2rem;">
+
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <h3>96-Well Parameter Overlay</h3>
                     <label style="font-weight:bold;">Project Parameter: 
@@ -181,6 +206,6 @@
             </div>
         </section>
     </div>
-    <script src="app.js?v=12"></script>
+    <script src="app.js?v=13"></script>
 </body>
 </html>
