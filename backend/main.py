@@ -48,19 +48,33 @@ def gompertz(t, A, um, l, y0):
     return y0 + (A - y0) * np.exp(-np.exp((um * np.e / (A - y0)) * (l - t) + 1))
 
 def fit_growth_curve(t, y):
-    if len(y) < 5 or np.max(y) < 0.1: return [np.nan, np.nan, np.nan, np.nan]
+    # Reject curves with no significant growth or very few points
+    dynamic_range = np.max(y) - np.min(y)
+    if len(y) < 5 or dynamic_range < 0.1 or np.max(y) < 0.05:
+        return [0.0, 0.0, 0.0, float(np.trapz(y, x=t)) if len(y) > 1 else 0.0]
+    
     y0_guess, A_guess = y.iloc[0], np.max(y)
     um_guess = (A_guess - np.min(y)) / (np.max(t) / 2) if np.max(t) > 0 else 0.1
     l_guess = t.iloc[np.argmax(np.diff(y))] if len(y) > 1 else 0
+    
     try:
         auc = float(np.trapz(y, x=t))
     except AttributeError:
         auc = float(np.trapezoid(y, x=t))
+        
     try:
-        popt, _ = curve_fit(gompertz, t, y, p0=[A_guess, um_guess, l_guess, y0_guess], bounds=([0, 0, 0, 0], [10, 10, 50, 2]), maxfev=10000)
-        return [popt[0], popt[1], popt[2], auc]  # A, um, l, auc
+        # Fit Gompertz with tighter constraints and a fallback
+        popt, _ = curve_fit(gompertz, t, y, p0=[A_guess, um_guess, l_guess, y0_guess], 
+                          bounds=([0, 0, 0, 0], [10, 10, 50, 2]), maxfev=5000)
+        
+        # If the optimizer just hits the upper bound for K or r on flat-ish data, it's a false positive
+        if popt[0] >= 9.9 or popt[1] >= 9.9:
+             return [0.0, 0.0, 0.0, auc]
+             
+        return [popt[0], popt[1], popt[2], auc]
     except:
-        return [np.nan, np.nan, np.nan, auc]
+        return [0.0, 0.0, 0.0, auc]
+
 
 
 @app.post("/upload")
