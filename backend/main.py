@@ -67,17 +67,26 @@ def fit_growth_curve(t, y):
         auc = float(np.trapezoid(y, x=t))
         
     try:
-        # Fit Gompertz with tighter constraints and a fallback
+        # Fit Gompertz with tighter, biologically realistic constraints
+        # K (OD) capped at 3.0, r (rate) capped at 2.0, Lag capped at 50h
         popt, _ = curve_fit(gompertz, t, y, p0=[A_guess, um_guess, l_guess, y0_guess], 
-                          bounds=([0, 0, 0, 0], [10, 10, 50, 2]), maxfev=5000)
+                          bounds=([0, 0, 0, 0], [3.0, 2.0, 50, 1.5]), maxfev=5000)
         
-        # If the optimizer just hits the upper bound for K or r on flat-ish data, it's a false positive
-        if popt[0] >= 9.9 or popt[1] >= 9.9:
+        # Reality Check: If K is significantly higher than the max observed OD, it's likely a false fit
+        max_obs = np.max(y)
+        if popt[0] > max_obs * 1.5 or popt[0] > 2.5:
+             # If it fits a massive K to a tiny jump at the end, reject it
+             if dynamic_range < 0.2:
+                 return [0.0, 0.0, 0.0, auc]
+        
+        # If it's just hitting the limits on rate for low-growth wells, reject it
+        if popt[1] > 1.9 and dynamic_range < 0.2:
              return [0.0, 0.0, 0.0, auc]
              
         return [popt[0], popt[1], popt[2], auc]
     except:
         return [0.0, 0.0, 0.0, auc]
+
 
 
 
