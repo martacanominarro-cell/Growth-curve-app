@@ -12,6 +12,18 @@ from scipy import stats
 
 app = FastAPI()
 
+# Priority Health Checks
+@app.get("/health")
+@app.get("/healthz")
+async def health_check():
+    return {"status": "healthy"}
+
+@app.get("/ping")
+async def ping():
+    return "pong"
+
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -213,4 +225,9 @@ async def analyze_data(payload: dict):
 
 # Mount static frontend over the root URL
 frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
-app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+print(f"Mounting frontend from: {frontend_dir}")
+if os.path.exists(frontend_dir):
+    app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+else:
+    print(f"WARNING: Frontend directory not found at {frontend_dir}")
+
