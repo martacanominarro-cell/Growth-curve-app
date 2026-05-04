@@ -32,6 +32,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def safe_float(val, default=0.0):
+    try:
+        if val is None or pd.isna(val): return default
+        f = float(val)
+        if np.isinf(f) or np.isnan(f): return default
+        return f
+    except:
+        return default
+
 def time_to_hours(t):
     if pd.isna(t): return np.nan
     try:
@@ -161,10 +170,11 @@ async def upload_files(files: list[UploadFile]):
     else:
         for c in ['K','r','lambda','auc']: final_df[c] = 0.0
         
-    # FastAPI natively crashes with a 500 error if attempting to serialize np.nan into JSON. Convert to None.
-    final_df = final_df.replace({np.nan: None})
+    # FastAPI natively crashes with a 500 error if attempting to serialize np.nan or Infinity into JSON. Convert to None.
+    final_df = final_df.replace({np.nan: None, np.inf: None, -np.inf: None})
         
     return {"raw_data": final_df.to_dict(orient="records")}
+
 
 @app.post("/analyze")
 async def analyze_data(payload: dict):
@@ -184,9 +194,12 @@ async def analyze_data(payload: dict):
         # Since physics math is executed on Upload, simply aggregate the pre-computed constants
         results.append({
             'File': f, 'Well': w, 'Strain': st, 'Condition': cnd, 
-            'K': float(grp['K'].iloc[0]), 'r': float(grp['r'].iloc[0]), 
-            'lambda': float(grp['lambda'].iloc[0]), 'auc': float(grp['auc'].iloc[0])
+            'K': safe_float(grp['K'].iloc[0]), 
+            'r': safe_float(grp['r'].iloc[0]), 
+            'lambda': safe_float(grp['lambda'].iloc[0]), 
+            'auc': safe_float(grp['auc'].iloc[0])
         })
+
 
     merged_res = pd.DataFrame(results)
     
@@ -207,17 +220,20 @@ async def analyze_data(payload: dict):
             if len(valid_groups) > 1:
                 try:
                     f_val, p_val = stats.f_oneway(*[samples[g] for g in valid_groups])
-                    stats_out[param] = {"f_val": float(f_val), "p_val": float(p_val)}
+                    stats_out[param] = {"f_val": safe_float(f_val, None), "p_val": safe_float(p_val, None)}
                 except: pass
+
                 
                 for g1, g2 in itertools.combinations(valid_groups, 2):
                     if g1 not in pairwise_stats[param]: pairwise_stats[param][g1] = {}
                     if g2 not in pairwise_stats[param]: pairwise_stats[param][g2] = {}
                     try:
                         _, p = stats.ttest_ind(samples[g1], samples[g2], equal_var=False)
-                        pairwise_stats[param][g1][g2] = float(p)
-                        pairwise_stats[param][g2][g1] = float(p)
+                        p_val = safe_float(p, None)
+                        pairwise_stats[param][g1][g2] = p_val
+                        pairwise_stats[param][g2][g1] = p_val
                     except: pass
+
 
     # Calculate Curves
     curve_data = {}
@@ -228,9 +244,10 @@ async def analyze_data(payload: dict):
             group_name = g[0]
             if group_name not in curve_data:
                 curve_data[group_name] = {'time': [], 'mean': [], 'sd': []}
-            curve_data[group_name]['time'].append(float(g[1]))
-            curve_data[group_name]['mean'].append(float(grp['OD'].mean()))
-            curve_data[group_name]['sd'].append(float(grp['OD'].std() if len(grp['OD']) > 1 else 0))
+            curve_data[group_name]['time'].append(safe_float(g[1]))
+            curve_data[group_name]['mean'].append(safe_float(grp['OD'].mean()))
+            curve_data[group_name]['sd'].append(safe_float(grp['OD'].std() if len(grp['OD']) > 1 else 0))
+
 
     # Calculate QC Data (Raw traces per group)
     qc_data = {}
