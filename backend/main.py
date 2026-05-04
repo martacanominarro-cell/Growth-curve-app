@@ -259,9 +259,10 @@ async def analyze_data(payload: dict):
             qc_data[group_name].append({
                 'file': g[1],
                 'well': g[2],
-                'time': [float(t) for t in grp['Time_hours']],
-                'od': [float(o) for o in grp['OD']]
+                'time': [safe_float(t) for t in grp['Time_hours']],
+                'od': [safe_float(o) for o in grp['OD']]
             })
+
 
     # Dump absolute raw curves unconditionally for 96-well grid mapping
     raw_all_curves = []
@@ -270,9 +271,10 @@ async def analyze_data(payload: dict):
             raw_all_curves.append({
                 'file': f,
                 'well': w,
-                'time': [float(t) for t in grp['Time_hours']],
-                'od': [float(o) for o in grp['OD']]
+                'time': [safe_float(t) for t in grp['Time_hours']],
+                'od': [safe_float(o) for o in grp['OD']]
             })
+
 
     return {
         "parameters": merged_res.to_dict(orient="records") if not merged_res.empty else [],
